@@ -1,0 +1,149 @@
+#!/usr/bin/env -S opam exec --switch=4.14.2+options -- utop
+
+(** Utop REPL statements *)
+#thread
+#require "feather"
+#require "containers"
+#require "unix"
+
+open Feather
+
+let sp = CCFormat.sprintf
+
+(** Mpv socket IPC *)
+module Mpv = struct
+
+  (*How to run Mpv as a server:
+      $ mpv --idle --keep-open --input-ipc-server=/tmp/valdefars_sock
+  *)
+    
+  let socket_file = "/tmp/valdefars_sock"
+    
+  (*Warning: global state*)
+  let socket = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 
+  let socket_addr = Unix.ADDR_UNIX socket_file
+
+  let () =
+    Unix.connect socket socket_addr;
+    at_exit (fun () -> Unix.shutdown socket Unix.SHUTDOWN_SEND)
+
+  let read_response =
+    let len = 256 in
+    let buf = Bytes.create len in
+    let rec aux n_read =
+      if n_read >= len then (
+        CCFormat.eprintf "Warning: command response was too long, so cut it\n%!";
+        Bytes.sub_string buf 0 len
+      ) else (
+        (*> Note: we read just 1 char as we currently don't want to make a
+            local buffer abstraction over data read from socket
+            .. @optimization; could read arbitrary amount of bytes and cut out
+               needed string (until newline) and save rest of bytes for next 'read'
+               operation
+        *)
+        let n_read' = Unix.read socket buf n_read 1 in
+        let n_read = n_read + n_read' in
+        if Bytes.get buf (n_read-1) = '\n' then (
+          let resp = Bytes.sub_string buf 0 n_read in
+          if CCString.mem ~sub:"request_id" resp then
+            resp
+          else ( (*> We drop all other events*)
+            (* CCFormat.eprintf "DEBUG: dropping non-response event\n%!"; *)
+            aux 0
+          ) 
+        ) else if n_read' = 0 then (
+          CCFormat.eprintf "Warning: data response stopped without a newline\n%!";
+          Bytes.sub_string buf 0 n_read
+        ) else (*> We continue reading*)
+          aux n_read
+      )
+    in
+    fun () -> aux 0
+
+  let send_string str =
+    let len = CCString.length str in
+    let bytes = Bytes.unsafe_of_string str in
+    let rec aux from =
+      let written = Unix.write socket bytes from (len - from) in
+      if written = 0 then failwith "Socket closed"
+      else if written <> len then (
+        (* CCFormat.eprintf "DEBUG: didn't write full string to socket\n%!"; *)
+        aux (from + written)
+      ) else ()
+    in
+    aux 0;
+    (*> Note: the protocol of Mpv seems to expect that we always read back the
+        response. This fixed that Mpv stopped responding after a while.
+        Though many responses read here are not direct responses to the current
+        command - so we just skip these until we see a relevant reponse. 
+    *)
+    read_response ()
+
+  module Cmd = struct 
+
+    type t = [
+      | `Stop
+      | `Play
+      | `Pause
+      | `Loop of bool (*toggled*)
+      | `Seek of int (*seconds*)
+      | `Load of string (*audio-path*)
+    ]
+
+    let str s = sp "\"%s\"" s (*json str*)
+    let bool b = sp "%b" b (*json bool*)
+
+    (*> Note: returned string list represents json fields of protocol *)
+    let to_mpv_cmd : t -> string list = function
+      | `Stop -> [ str "stop" ]
+      | `Play -> [ str "set_property"; str "pause"; bool false ]
+      | `Pause -> [ str "set_property"; str "pause"; bool true ]
+      | `Loop loop -> [ str "set_property"; str "loop-file"; bool loop ]
+      | `Load file -> [ str "loadfile"; str file; ]
+      | `Seek seconds ->
+        let minutes = seconds / 60 in
+        let seconds_left = seconds mod 60 in
+        [
+          str "seek";
+          str @@ sp "%d:%d" minutes seconds_left;
+          str "absolute+exact"
+        ]
+
+    (*> Note that enabling 'async' didn't help loading files faster after big file*)
+    let serialize cmd =
+      cmd
+      |> to_mpv_cmd
+      |> String.concat ", "
+      |> sp "{ \"command\": [ %s ] }\n"
+
+  end
+
+  let send_cmd cmd = cmd |> Cmd.serialize |> send_string
+
+end
+
+let print_response str = CCFormat.printf "%s\n%!" str
+
+(** The script *)
+
+let () =
+  let files =
+    process "find" [ "."; "-iname"; "*small_*.mp3" ]
+    |. shuf
+    |> collect stdout
+    |> lines 
+  in
+  while true do
+    files |> CCList.iter (fun file ->
+      CCFormat.printf "loading file %s\n%!" file;
+      `Load file |> Mpv.send_cmd |> print_response;
+      CCFormat.printf "sending 'play'\n%!";
+      `Play |> Mpv.send_cmd |> print_response;
+      (* Unix.sleepf 0.03; *)
+      Unix.sleepf 0.06;
+    )
+  done
+
+
+
+
