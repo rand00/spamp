@@ -1,3 +1,5 @@
+Tillykke med fødselsdagen Valdefar (:
+
 ## `spamp`
 Spam `mpv` using OCaml as `bash` alternative. The scripts show how to use OCaml as a sensible `bash` alternative, to iterate through your
 audio archive and play parts of each sound in a random sequence using `mpv`. 
