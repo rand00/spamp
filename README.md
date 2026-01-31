@@ -1,5 +1,5 @@
-## `spamp` - spam `mpv`
-.. using OCaml as `bash` alternative. The scripts show how to use OCaml as a sensible `bash` alternative, to iterate through your
+## `spamp`
+Spam `mpv` using OCaml as `bash` alternative. The scripts show how to use OCaml as a sensible `bash` alternative, to iterate through your
 audio archive and play parts of each sound in a random sequence using `mpv`. 
 * `spamp_simple.ml` shows how you would do this in a simple way, like one would do in `bash`
 * `spamp.ml` implements more complex handling of the `mpv` socket protocol using OCaml, to spam much faster 
