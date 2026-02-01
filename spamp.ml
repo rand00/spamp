@@ -39,7 +39,7 @@ module Mpv = struct
   let read_response =
     let len = 1024 in
     let buf = Bytes.create len in
-    let rec aux n_read =
+    let rec aux ~success_event n_read =
       if n_read >= len then (
         CCFormat.eprintf "Warning: command response was too long, so cut it\n%!";
         Bytes.sub_string buf 0 len
@@ -59,11 +59,13 @@ module Mpv = struct
         let n_read = n_read + n_read' in
         if Bytes.get buf (n_read-1) = '\n' then (
           let resp = Bytes.sub_string buf 0 n_read in
-          if CCString.mem ~sub:"request_id" resp then
+          if CCString.mem ~sub:success_event resp then
             resp
           else ( (*> We drop all other events*)
-            (* CCFormat.eprintf "DEBUG: dropping non-response event\n%!"; *)
-            aux 0
+            (* CCFormat.eprintf "DEBUG: dropping non-response event \n\t%s%!" *)
+            (*   (Bytes.sub_string buf 0 n_read) *)
+            (* ; *)
+            aux ~success_event 0
           ) 
         ) else if n_read' = 0 then (
           (*Warning: in theory mpv could be in the middle of writing a message
@@ -77,10 +79,11 @@ module Mpv = struct
           CCFormat.eprintf "Warning: data response stopped without a newline\n%!";
           Bytes.sub_string buf 0 n_read
         ) else (*> We continue reading*)
-          aux n_read
+          aux ~success_event n_read
       )
     in
-    fun () -> aux 0
+    fun ?(success_event="request_id") () ->
+      aux ~success_event 0
 
   let send_string str =
     let len = CCString.length str in
@@ -94,6 +97,11 @@ module Mpv = struct
       ) else ()
     in
     aux 0
+
+  let wait_for_event = function
+    | `File_loaded ->
+      let success_event = "file-loaded" in
+      read_response ~success_event ()
 
   module Cmd = struct 
 
@@ -128,7 +136,7 @@ module Mpv = struct
         let seconds_left = seconds mod 60 in
         [
           str "seek";
-          str @@ sp "%02d:%02d" minutes seconds;
+          str @@ sp "%02d:%02d" minutes seconds_left;
           (* str "absolute+exact"; *)
           str "absolute";
         ]
@@ -137,7 +145,7 @@ module Mpv = struct
         let seconds_left = seconds mod 60 in
         [
           str "seek";
-          str @@ sp "%02d:%02d" minutes seconds;
+          str @@ sp "%02d:%02d" minutes seconds_left;
           (* str "relative+exact"; *)
           str "relative";
         ]
@@ -189,14 +197,13 @@ let () =
     files |> CCList.iter (fun file ->
       CCFormat.printf "loading file %s\n%!" file;
       `Load file |> Mpv.send_cmd |> print_response;
-      Unix.sleepf 0.02;
-      (*< Note: this sleep is needed to avoid mpv failing on 'seek' when we just
-          have loaded a file*)
+      CCFormat.printf "waiting for 'file-loaded'\n%!";
+      Mpv.wait_for_event `File_loaded |> print_response;
       CCFormat.printf "sending 'seek'\n%!";
       `Seek (`Absolute_percent 50.) |> Mpv.send_cmd |> print_response;
       CCFormat.printf "sending 'play'\n%!";
       `Play |> Mpv.send_cmd |> print_response;
-      Unix.sleepf 0.02;
+      Unix.sleepf 0.03;
     )
   done
 
