@@ -14,7 +14,16 @@ let sp = CCFormat.sprintf
 module Mpv = struct
 
   (*How to run Mpv as a server:
-      $ mpv --idle --keep-open --input-ipc-server=/tmp/valdefars_sock
+      $ mpv --loop --idle --keep-open --audio-display=no --input-ipc-server=/tmp/valdefars_sock
+    Notes:
+      * --loop enables you to granulate through a single big file with relative
+        seeking commands
+      * --idle + --keep-open allows mpv to continue running as a server while there
+        are no files in queue and when all files have finished playing
+      * --audio-display=no avoids a video-popup showing the album-cover, which
+        is also extremely slow - which then slows down loading of files, which
+        in effect slows down when you are allowed to seek into file
+      * --input-ipc-server refers to the unix socket we communicate through
   *)
     
   let socket_file = "/tmp/valdefars_sock"
@@ -129,7 +138,7 @@ module Mpv = struct
         [
           str "seek";
           str @@ sp "%02d:%02d" minutes seconds;
-          (* str "absolute+exact"; *)
+          (* str "relative+exact"; *)
           str "relative";
         ]
       | `Seek (`Absolute_percent pct) ->
@@ -171,8 +180,7 @@ let print_response str = CCFormat.printf "%s\n%!" str
 
 let () =
   let files =
-    (* process "find" [ "."; "-iname"; "*small_*.mp3" ] *)
-    process "find" [ "."; "-iname"; "*Down.mp3" ]
+    process "find" [ "."; "-iname"; "*.mp3" ]
     |. shuf
     |> collect stdout
     |> lines 
@@ -185,10 +193,9 @@ let () =
       (*< Note: this sleep is needed to avoid mpv failing on 'seek' when we just
           have loaded a file*)
       CCFormat.printf "sending 'seek'\n%!";
-      `Seek (`Relative_percent 0.1) |> Mpv.send_cmd |> print_response;
+      `Seek (`Absolute_percent 50.) |> Mpv.send_cmd |> print_response;
       CCFormat.printf "sending 'play'\n%!";
       `Play |> Mpv.send_cmd |> print_response;
-      (* Unix.sleepf 0.03; *)
       Unix.sleepf 0.02;
     )
   done
