@@ -47,7 +47,7 @@ opam install utop containers feather
 
 Note that for running `spamp.ml` you also need `mpv` to run as a server in the background: 
 ```bash
-mpv --idle --pause --keep-open --input-ipc-server=/tmp/valdefars_sock
+mpv --loop --idle --keep-open --audio-display=no --input-ipc-server=/tmp/valdefars_sock
 ```
 
 Make the changes you want to `spamp.ml` or `spamp_simple.ml` in your shell, and execute them as scripts.
