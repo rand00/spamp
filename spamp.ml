@@ -28,7 +28,7 @@ module Mpv = struct
     at_exit (fun () -> Unix.shutdown socket Unix.SHUTDOWN_SEND)
 
   let read_response =
-    let len = 256 in
+    let len = 1024 in
     let buf = Bytes.create len in
     let rec aux n_read =
       if n_read >= len then (
@@ -38,8 +38,13 @@ module Mpv = struct
         (*> Note: we read just 1 char as we currently don't want to make a
             local buffer abstraction over data read from socket
             .. @optimization; could read arbitrary amount of bytes and cut out
-               needed string (until newline) and save rest of bytes for next 'read'
-               operation
+               needed string (until newline) and save rest of bytes for next 'read_response'
+               call into new local buffer of 'extra data to prepend'
+               * @important; in the simple case without keeping a local buffer of
+                 'extra' data: as we don't know what events MPV sends when,
+                 we are not allowed to read all available data on socket, if the
+                 next call to 'read_response' should be able to read an unbroken
+                 message
         *)
         let n_read' = Unix.read socket buf n_read 1 in
         let n_read = n_read + n_read' in
@@ -52,6 +57,14 @@ module Mpv = struct
             aux 0
           ) 
         ) else if n_read' = 0 then (
+          (*Warning: in theory mpv could be in the middle of writing a message
+            that we have only read partially here
+            * @note; it could also be the case that mpv was killed before
+              finishing writing a message, which would make us hang
+            => more correct solution;
+              * try to read the next chars until newline here, and put a timeout on this
+                Unix.read call
+          *)
           CCFormat.eprintf "Warning: data response stopped without a newline\n%!";
           Bytes.sub_string buf 0 n_read
         ) else (*> We continue reading*)
@@ -71,13 +84,7 @@ module Mpv = struct
         aux (from + written)
       ) else ()
     in
-    aux 0;
-    (*> Note: the protocol of Mpv seems to expect that we always read back the
-        response. This fixed that Mpv stopped responding after a while.
-        Though many responses read here are not direct responses to the current
-        command - so we just skip these until we see a relevant reponse. 
-    *)
-    read_response ()
+    aux 0
 
   module Cmd = struct 
 
@@ -118,7 +125,14 @@ module Mpv = struct
 
   end
 
-  let send_cmd cmd = cmd |> Cmd.serialize |> send_string
+  let send_cmd cmd =
+    cmd |> Cmd.serialize |> send_string;
+    (*> Note: the protocol of Mpv seems to expect that we always read back the
+        response. This fixed that Mpv stopped responding after a while.
+        Though many responses read here are not direct responses to the current
+        command - so we just skip these until we see a relevant reponse. 
+    *)
+    read_response ()
 
 end
 
