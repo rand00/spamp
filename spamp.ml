@@ -93,8 +93,15 @@ module Mpv = struct
       | `Play
       | `Pause
       | `Loop of bool (*toggled*)
-      | `Seek of int (*seconds*)
+      | `Seek of seek
       | `Load of string (*audio-path*)
+    ]
+
+    and seek = [
+      | `Absolute_seconds of int
+      | `Relative_seconds of int
+      | `Absolute_percent of float
+      | `Relative_percent of float
     ]
 
     let str s = sp "\"%s\"" s (*json str*)
@@ -107,13 +114,35 @@ module Mpv = struct
       | `Pause -> [ str "set_property"; str "pause"; bool true ]
       | `Loop loop -> [ str "set_property"; str "loop-file"; bool loop ]
       | `Load file -> [ str "loadfile"; str file; ]
-      | `Seek seconds ->
+      | `Seek (`Absolute_seconds seconds) ->
         let minutes = seconds / 60 in
         let seconds_left = seconds mod 60 in
         [
           str "seek";
-          str @@ sp "%d:%d" minutes seconds_left;
-          str "absolute+exact"
+          str @@ sp "%02d:%02d" minutes seconds;
+          (* str "absolute+exact"; *)
+          str "absolute";
+        ]
+      | `Seek (`Relative_seconds seconds) ->
+        let minutes = seconds / 60 in
+        let seconds_left = seconds mod 60 in
+        [
+          str "seek";
+          str @@ sp "%02d:%02d" minutes seconds;
+          (* str "absolute+exact"; *)
+          str "relative";
+        ]
+      | `Seek (`Absolute_percent pct) ->
+        [
+          str "seek";
+          str @@ sp "%f" pct;
+          str "absolute-percent"
+        ]
+      | `Seek (`Relative_percent pct) ->
+        [
+          str "seek";
+          str @@ sp "%f" pct;
+          str "relative-percent"
         ]
 
     (*> Note that enabling 'async' didn't help loading files faster after big file*)
@@ -142,7 +171,8 @@ let print_response str = CCFormat.printf "%s\n%!" str
 
 let () =
   let files =
-    process "find" [ "."; "-iname"; "*small_*.mp3" ]
+    (* process "find" [ "."; "-iname"; "*small_*.mp3" ] *)
+    process "find" [ "."; "-iname"; "*Down.mp3" ]
     |. shuf
     |> collect stdout
     |> lines 
@@ -151,10 +181,15 @@ let () =
     files |> CCList.iter (fun file ->
       CCFormat.printf "loading file %s\n%!" file;
       `Load file |> Mpv.send_cmd |> print_response;
+      Unix.sleepf 0.02;
+      (*< Note: this sleep is needed to avoid mpv failing on 'seek' when we just
+          have loaded a file*)
+      CCFormat.printf "sending 'seek'\n%!";
+      `Seek (`Relative_percent 0.1) |> Mpv.send_cmd |> print_response;
       CCFormat.printf "sending 'play'\n%!";
       `Play |> Mpv.send_cmd |> print_response;
       (* Unix.sleepf 0.03; *)
-      Unix.sleepf 0.06;
+      Unix.sleepf 0.02;
     )
   done
 
