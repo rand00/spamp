@@ -8,16 +8,16 @@ audio archive and play parts of each sound in a random sequence using `mpv`.
 
 ## why
 My good friend Valdemar showed me a simple one-liner `bash` script that made some interesting rhythms by iterating through his music samples archive.
-I saw a bunch of stuff that could become better:
+A bunch of stuff could be better, enabling faster spamming:
 * there were unintentional bugs because of `bash` expanding wildcards before they were given to `find`
 * `shuf` was run inside a while-loop - which should be better to have on the outside of the loop:
   * to avoid the bad timecomplexity of shuf going through all files
   * to avoid playing the same sounds randomly again
   * to avoid `shuf` seemingly running out of randomness at some point
-* `mpv` could be run as a server, where one loads new files via a socket-connection
+* `mpv` could be run as a server instead of per file, where one loads new files via its socket protocol
 
-But `bash` wouldn't make this easy... so I wanted to make an OCaml library to do this - but instead found the excellent [`feather`](https://github.com/charlesetc/feather) library. 
-Advantages of OCaml over `bash` here:
+But `bash` wouldn't make this easy... so I wanted to make an OCaml library to do this - but instead found the [`feather`](https://github.com/charlesetc/feather) library. 
+Advantages of OCaml over `bash`:
 * you can avoid the bad semantics of `bash` with [whitespace inside variables and how you need to iterate through this](https://superuser.com/questions/284187/how-to-iterate-over-lines-in-a-variable-in-bash)
 * you can keep open a socket-connection to `mpv` instead of reconnecting on each loop-iteration with `socat`
 * you can avoid confusion about wild-card expansions etc. when running stuff like `find`
@@ -35,7 +35,7 @@ opam init
 
 Install OCaml:
 ```bash
-opam switch install 4.14.2+options
+opam switch create 4.14.2+options
 ```
 
 Then clone this repository and install dependencies:
@@ -45,15 +45,12 @@ cd spamp
 opam install utop containers feather 
 ```
 
-Make the scripts executeable (if not already):
-```bash
-chmod u+x *.ml
-```
-
 Note that for running `spamp.ml` you also need `mpv` to run as a server in the background: 
 ```bash
 mpv --idle --pause --keep-open --input-ipc-server=/tmp/valdefars_sock
 ```
+
+Make the changes you want to `spamp.ml` or `spamp_simple.ml` in your shell, and execute them as scripts.
 
 ## notes on the script semantics
 The `*.ml` files are setup to be runnable like `bash` scripts calling into the OCaml package 
