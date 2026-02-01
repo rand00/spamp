@@ -98,11 +98,6 @@ module Mpv = struct
     in
     aux 0
 
-  let wait_for_event = function
-    | `File_loaded ->
-      let success_event = "file-loaded" in
-      read_response ~success_event ()
-
   module Cmd = struct 
 
     type t = [
@@ -180,6 +175,13 @@ module Mpv = struct
     *)
     read_response ()
 
+  let wait_for_event = function
+    | `File_loaded ->
+      (*Note: this is needed as mpv doesn't load the file before it returns success
+        to the 'load-file' command - so if we 'seek' before this event it fails*)
+      let success_event = "file-loaded" in
+      read_response ~success_event ()
+        
 end
 
 let print_response str = CCFormat.printf "%s\n%!" str
