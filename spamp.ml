@@ -29,61 +29,38 @@ module Mpv = struct
   let socket_file = "/tmp/valdefars_sock"
     
   (*Warning: global state*)
-  let socket = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 
+  let socket = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0
+  let socket_in_chan = Unix.in_channel_of_descr socket
   let socket_addr = Unix.ADDR_UNIX socket_file
 
   let () =
     Unix.connect socket socket_addr;
-    at_exit (fun () -> Unix.shutdown socket Unix.SHUTDOWN_SEND)
+    at_exit (fun () ->
+      close_in socket_in_chan;
+      Unix.shutdown socket Unix.SHUTDOWN_SEND
+    )
 
-  let read_response =
-    let len = 1024 in
-    let buf = Bytes.create len in
-    let rec aux ~success_event n_read =
-      if n_read >= len then (
-        CCFormat.eprintf "Warning: command response was too long, so cut it\n%!";
-        Bytes.sub_string buf 0 len
-      ) else (
-        (*> Note: we read just 1 char as we currently don't want to make a
-            local buffer abstraction over data read from socket
-            .. @optimization; could read arbitrary amount of bytes and cut out
-               needed string (until newline) and save rest of bytes for next 'read_response'
-               call into new local buffer of 'extra data to prepend'
-               * @important; in the simple case without keeping a local buffer of
-                 'extra' data: as we don't know what events MPV sends when,
-                 we are not allowed to read all available data on socket, if the
-                 next call to 'read_response' should be able to read an unbroken
-                 message
-        *)
-        let n_read' = Unix.read socket buf n_read 1 in
-        let n_read = n_read + n_read' in
-        if Bytes.get buf (n_read-1) = '\n' then (
-          let resp = Bytes.sub_string buf 0 n_read in
-          if CCString.mem ~sub:success_event resp then
-            resp
-          else ( (*> We drop all other events*)
-            (* CCFormat.eprintf "DEBUG: dropping non-response event \n\t%s%!" *)
-            (*   (Bytes.sub_string buf 0 n_read) *)
-            (* ; *)
-            aux ~success_event 0
-          ) 
-        ) else if n_read' = 0 then (
-          (*Warning: in theory mpv could be in the middle of writing a message
-            that we have only read partially here
-            * @note; it could also be the case that mpv was killed before
-              finishing writing a message, which would make us hang
-            => more correct solution;
-              * try to read the next chars until newline here, and put a timeout on this
-                Unix.read call
-          *)
-          CCFormat.eprintf "Warning: data response stopped without a newline\n%!";
-          Bytes.sub_string buf 0 n_read
-        ) else (*> We continue reading*)
-          aux ~success_event n_read
-      )
+  let read_response ?(success_event="request_id") () =
+    let rec aux () =
+      (*> Note that we use an 'in_channel' here that wraps the unix-socket
+          file-descriptor - this is an abstraction that has an internal buffer
+          which then minimizes Unix.read calls and allows to read a 'line' efficiently
+          * specifically this will also block until there is a line available
+          * unix SIGPIPE is signaled when socket is closed unexpectedly 
+      *)
+      match In_channel.input_line socket_in_chan with
+      | None -> failwith "Socket was closed"
+      | Some event -> 
+        if CCString.mem ~sub:success_event event then
+          event
+        else ( (*> We drop all other events*)
+          (* CCFormat.eprintf "DEBUG: dropping non-response event \n\t%s%!" *)
+          (*   (Bytes.sub_string buf 0 n_read) *)
+          (* ; *)
+          aux ()
+        ) 
     in
-    fun ?(success_event="request_id") () ->
-      aux ~success_event 0
+    aux ()
 
   let send_string str =
     let len = CCString.length str in
@@ -178,7 +155,7 @@ module Mpv = struct
   let wait_for_event = function
     | `File_loaded ->
       (*Note: this is needed as mpv doesn't load the file before it returns success
-        to the 'load-file' command - so if we 'seek' before this event it fails*)
+        to the 'load-file' command - so if we 'seek' before t*)
       let success_event = "file-loaded" in
       read_response ~success_event ()
         
@@ -205,7 +182,7 @@ let () =
       `Seek (`Absolute_percent 50.) |> Mpv.send_cmd |> print_response;
       CCFormat.printf "sending 'play'\n%!";
       `Play |> Mpv.send_cmd |> print_response;
-      Unix.sleepf 0.03;
+      Unix.sleepf 0.05;
     )
   done
 
