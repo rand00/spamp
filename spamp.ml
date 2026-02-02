@@ -36,8 +36,8 @@ module Mpv = struct
   let () =
     Unix.connect socket socket_addr;
     at_exit (fun () ->
-      Unix.shutdown socket Unix.SHUTDOWN_SEND
-      close_in socket_in_chan;
+      Unix.shutdown socket Unix.SHUTDOWN_SEND;
+      close_in socket_in_chan; (*< Note this closes whole socket file-descriptor*)
     )
 
   let read_response ?(success_event="request_id") () =
