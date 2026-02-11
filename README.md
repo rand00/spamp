@@ -4,7 +4,9 @@ Tillykke med fødselsdagen Valdefar (:
 Spam `mpv` using OCaml as `bash` alternative. The scripts show how to use OCaml as a sensible `bash` alternative, to iterate through your
 audio archive and play parts of each sound in a random sequence using `mpv`. 
 * `spamp_simple.ml` shows how you would do this in a simple way, like one would do in `bash`
-* `spamp.ml` implements more complex handling of the `mpv` socket protocol using OCaml, to spam much faster 
+* `spamp.ml` implements more complex handling of the `mpv` socket protocol using OCaml, to spam much faster
+* `spamp_pmmd.ml` extends `spamp.ml` by being controlled via a custom `pmmd` wrapper that exposes a request/response-style socket.
+  Note that `pmmd` is currently not open source.
 
 ## why
 My good friend Valdemar showed me a simple one-liner `bash` script that made some interesting rhythms by iterating through his music samples archive.
