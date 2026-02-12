@@ -34,18 +34,9 @@ module Socket = struct
     in
     aux ()
 
-  let send_string socket str =
-    let len = CCString.length str in
-    let bytes = Bytes.unsafe_of_string str in
-    let rec aux from =
-      let written = Unix.write socket bytes from (len - from) in
-      if written = 0 then failwith "Socket closed"
-      else if written <> len then (
-        (* CCFormat.eprintf "DEBUG: didn't write full string to socket\n%!"; *)
-        aux (from + written)
-      ) else ()
-    in
-    aux 0
+  let send_line chan str =
+    Out_channel.output_string chan @@ str ^ "\n";
+    Out_channel.flush chan
 
 end
 
@@ -70,6 +61,7 @@ module Mpv = struct
   (*Warning: global state*)
   let socket = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0
   let socket_in_chan = Unix.in_channel_of_descr socket
+  let socket_out_chan = Unix.out_channel_of_descr socket
   let socket_addr = Unix.ADDR_UNIX socket_file
       
   let () =
@@ -143,12 +135,12 @@ module Mpv = struct
       cmd
       |> to_mpv_cmd
       |> String.concat ", "
-      |> sp "{ \"command\": [ %s ] }\n"
+      |> sp "{ \"command\": [ %s ] }"
 
   end
 
   let send_cmd cmd =
-    cmd |> Cmd.serialize |> Socket.send_string socket;
+    cmd |> Cmd.serialize |> Socket.send_line socket_out_chan;
     (*> Note: the protocol of Mpv seems to expect that we always read back the
         response. This fixed that Mpv stopped responding after a while.
         Though many responses read here are not direct responses to the current
@@ -176,6 +168,7 @@ module Pmmd = struct
   (*Warning: global state*)
   let socket = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0
   let socket_in_chan = Unix.in_channel_of_descr socket
+  let socket_out_chan = Unix.out_channel_of_descr socket
   let socket_addr = Unix.ADDR_UNIX socket_file
       
   let () =
@@ -196,13 +189,13 @@ module Pmmd = struct
     | _ -> failwith "Couldn't parse wavestacks"
 
   let read_wavestacks () = 
-    "now\n" |> Socket.send_string socket;
+    "now" |> Socket.send_line socket_out_chan;
     Socket.read_response socket_in_chan
       ~success_event:"" (*< matches on all events*)
     |> parse_response 
 
   let read_wavestacks_on_beat () =
-    "beat\n" |> Socket.send_string socket;
+    "beat" |> Socket.send_line socket_out_chan;
     Socket.read_response socket_in_chan
       ~success_event:"" (*< matches on all events*)
     |> parse_response 
